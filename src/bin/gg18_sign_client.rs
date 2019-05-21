@@ -12,12 +12,14 @@ extern crate serde_derive;
 extern crate hex;
 extern crate serde_json;
 
+use curv::arithmetic::traits::Converter;
+use curv::cryptographic_primitives::hashing::hmac_sha512;
 use curv::cryptographic_primitives::proofs::sigma_correct_homomorphic_elgamal_enc::HomoELGamalProof;
+use curv::cryptographic_primitives::hashing::traits::KeyedHash;
 use curv::cryptographic_primitives::proofs::sigma_dlog::DLogProof;
 use curv::cryptographic_primitives::secret_sharing::feldman_vss::VerifiableSS;
 use curv::elliptic::curves::traits::*;
-use curv::BigInt;
-use curv::{FE, GE};
+
 use multi_party_ecdsa::protocols::multi_party_ecdsa::gg_2018::mta::*;
 use multi_party_ecdsa::protocols::multi_party_ecdsa::gg_2018::party_i::*;
 use paillier::*;
@@ -26,6 +28,7 @@ use std::env;
 use std::fs;
 use std::time::Duration;
 use std::{thread, time};
+use curv::{BigInt, FE, GE};
 
 #[derive(Hash, PartialEq, Eq, Clone, Debug, Serialize, Deserialize)]
 pub struct TupleKey {
@@ -63,6 +66,46 @@ pub struct Params {
     pub threshold: String,
 }
 
+pub fn hd_key(
+    mut location_in_hir: Vec<BigInt>,
+    pubkey: &GE,
+    chain_code_bi: &BigInt,
+) -> (GE, FE, GE) {
+    let mask = BigInt::from(2).pow(256) - BigInt::one();
+    // let public_key = self.public.q.clone();
+
+    // calc first element:
+    let first = location_in_hir.remove(0);
+    let pub_key_bi = pubkey.bytes_compressed_to_big_int();
+    let f = hmac_sha512::HMacSha512::create_hmac(&chain_code_bi, &[&pub_key_bi, &first]);
+    let f_l = &f >> 256;
+    let f_r = &f & &mask;
+    let f_l_fe: FE = ECScalar::from(&f_l);
+    let f_r_fe: FE = ECScalar::from(&f_r);
+
+    let bn_to_slice = BigInt::to_vec(chain_code_bi);
+    let chain_code = GE::from_bytes(&bn_to_slice[1..33]).unwrap() * &f_r_fe;
+    let pub_key = pubkey * &f_l_fe;
+
+    let (public_key_new_child, f_l_new, cc_new) =
+        location_in_hir
+            .iter()
+            .fold((pub_key, f_l_fe, chain_code), |acc, index| {
+                let pub_key_bi = acc.0.bytes_compressed_to_big_int();
+                let f = hmac_sha512::HMacSha512::create_hmac(
+                    &acc.2.bytes_compressed_to_big_int(),
+                    &[&pub_key_bi, index],
+                );
+                let f_l = &f >> 256;
+                let f_r = &f & &mask;
+                let f_l_fe: FE = ECScalar::from(&f_l);
+                let f_r_fe: FE = ECScalar::from(&f_r);
+
+                (acc.0 * &f_l_fe, f_l_fe * &acc.1, &acc.2 * &f_r_fe)
+            });
+    (public_key_new_child, f_l_new, cc_new)
+}
+
 fn main() {
     if env::args().nth(4).is_some() {
         panic!("too many arguments")
@@ -82,13 +125,13 @@ fn main() {
     // read key file
     let data = fs::read_to_string(env::args().nth(2).unwrap())
         .expect("Unable to load keys, did you run keygen first? ");
-    let (party_keys, shared_keys, party_id, vss_scheme_vec, paillier_key_vector, y_sum): (
+    let (party_keys, shared_keys, party_id, vss_scheme_vec, paillier_key_vector, y_sum_main): (
         Keys,
         SharedKeys,
         u32,
         Vec<VerifiableSS>,
         Vec<EncryptionKey>,
-        GE,
+        GE
     ) = serde_json::from_str(&data).unwrap();
 
     //read parameters:
@@ -138,8 +181,21 @@ fn main() {
     }
     // signers_vec.sort();
 
-    let private = PartyPrivate::set_private(party_keys.clone(), shared_keys);
-
+    let chain_code = shared_keys.y * &party_keys.u_i;
+    let (y_sum, f_l_new, cc_new) =
+        hd_key(vec![BigInt::from(0), BigInt::from(1)], &y_sum_main, &chain_code.bytes_compressed_to_big_int());
+    let private;
+    // set party=2 as leader
+    if (party_num_int == 2 ) {
+        let mut new_party_keys = party_keys.clone();
+        new_party_keys.u_i = party_keys.u_i * &f_l_new;
+        private = PartyPrivate::set_private(new_party_keys.clone(), shared_keys);
+    } else{
+        private = PartyPrivate::set_private(party_keys.clone(), shared_keys);
+    }
+      
+    
+    println!("New private: {:?}, new pubkey: {}", &private, y_sum.get_element()); 
     let sign_keys = SignKeys::create(
         &private,
         &vss_scheme_vec[signers_vec[(party_num_int - 1) as usize]],
@@ -383,7 +439,7 @@ fn main() {
 
     //phase (5B)  broadcast decommit and (5B) ZK proof
     assert!(broadcast(
-        &client,
+&client,
         party_num_int.clone(),
         "round6",
         serde_json::to_string(&(phase_5a_decom.clone(), helgamal_proof.clone())).unwrap(),
@@ -520,16 +576,22 @@ fn main() {
         .expect("verification failed");
     println!(" \n");
     println!("party {:?} Output Signature: \n", party_num_int);
-    println!("R: {:?}", sig.r.get_element());
-    println!("s: {:?} \n", sig.s.get_element());
+    println!("R: {:?}", sig.r);
+    println!("s: {:?} \n", sig.s);
+    println!("child pubkey: {:?} \n", y_sum);
+
+    println!("pubkey: {:?} \n", y_sum_main);
     let sign_json = serde_json::to_string(&(
         "r",
         (BigInt::from(&(sig.r.get_element())[..])).to_str_radix(16),
         "s",
         (BigInt::from(&(sig.s.get_element())[..])).to_str_radix(16),
     ))
-    .unwrap();
-
+        .unwrap();
+    println!("verifying signature with public key");
+    verify(&sig, &y_sum, &message_bn).expect("false");
+    println!("verifying signature with child pub key");
+    //verify(&sig, &new_key, &message_bn).expect("false");
     fs::write("signature".to_string(), sign_json).expect("Unable to save !");
 }
 

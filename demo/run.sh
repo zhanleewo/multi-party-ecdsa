@@ -24,7 +24,7 @@ for i in $(seq 1 $n)
 do
 
 echo "key gen for client $i out of $n"
-./gg18_keygen_client http://127.0.0.1:8001 keys$i.store &
+RUST_BACKTRACE=1 ./gg18_keygen_client http://127.0.0.1:8001 keys$i.store &
 sleep 3
 done
 
@@ -36,7 +36,7 @@ echo "sign"
 for i in $(seq 1 $((t+1)));
 do
 echo "signing for client $i out of $((t+1))"
-./gg18_sign_client http://127.0.0.1:8001 keys$i.store "KZen Networks" &
+./rg18_sign_client http://127.0.0.1:8001 keys$i.store "KZen Networks" &
 
 sleep 2
 done
