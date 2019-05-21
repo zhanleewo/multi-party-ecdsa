@@ -181,12 +181,15 @@ fn main() {
     }
     // signers_vec.sort();
 
-    let chain_code = shared_keys.y * &party_keys.u_i;
+    let chain_code = shared_keys.y; //* &party_keys.u_i;
+    println!("chain code {} {}", shared_keys.y.bytes_compressed_to_big_int(),
+             chain_code.bytes_compressed_to_big_int());
+
     let (y_sum, f_l_new, cc_new) =
         hd_key(vec![BigInt::from(0), BigInt::from(1)], &y_sum_main, &chain_code.bytes_compressed_to_big_int());
     let private;
     // set party=2 as leader
-    if (party_num_int == 2 ) {
+    if (party_num_int == 1 ) {
         let mut new_party_keys = party_keys.clone();
         new_party_keys.u_i = party_keys.u_i * &f_l_new;
         private = PartyPrivate::set_private(new_party_keys.clone(), shared_keys);
@@ -195,7 +198,8 @@ fn main() {
     }
       
     
-    println!("New private: {:?}, new pubkey: {}", &private, y_sum.get_element()); 
+    println!("Master pubkey: {:?}, new pubkey: {}", y_sum_main.get_element(),
+             y_sum.get_element());
     let sign_keys = SignKeys::create(
         &private,
         &vss_scheme_vec[signers_vec[(party_num_int - 1) as usize]],
@@ -407,7 +411,7 @@ fn main() {
     let two = BigInt::from(2);
     let message_bn = message_bn.modulus(&two.pow(256));
     let local_sig =
-        LocalSignature::phase5_local_sig(&sign_keys.k_i, &message_bn, &R, &sigma, &y_sum);
+        LocalSignature::phase5_local_sig(&sign_keys.k_i, &message_bn, &R, &sigma, &y_sum_main);
 
     let (phase5_com, phase_5a_decom, helgamal_proof) = local_sig.phase5a_broadcast_5b_zkproof();
 
