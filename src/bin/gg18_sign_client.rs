@@ -186,16 +186,17 @@ fn main() {
     println!("chain code {:?}", chain_code);
 
     // derive a new pubkey and LR sequence, y_sum becomes a new child pub key
-    // let (y_sum, f_l_new, _cc_new) =
-        // hd_key(vec![BigInt::from(0), BigInt::from(1)], &y_sum, &chain_code.bytes_compressed_to_big_int());
     let (y_sum, f_l_new, _cc_new) =
         hd_key(vec![BigInt::from(0), BigInt::from(1)], &y_sum, &chain_code.bytes_compressed_to_big_int());
 
     // optimize!
     let g: GE = ECPoint::generator();
+    // apply on first commitment for leader (leader is party with num=1)
     let com_zero_new = vss_scheme_vec[0].commitments[0] + g * f_l_new;
+    // get iterator of all commitments and skip first zero commitment 
     let mut com_iter_unchanged = vss_scheme_vec[0].commitments.iter();
     com_iter_unchanged.next().unwrap();
+    // iterate commitments and inject changed commitments in the beginning
     let com_vec_new = (0..vss_scheme_vec[1].commitments.len())
         .map(|i| {
             if i == 0 {
@@ -209,15 +210,16 @@ fn main() {
         parameters: vss_scheme_vec[0].parameters.clone(),
         commitments: com_vec_new,
     };        
-
+    // replace old vss_scheme for leader with new one at position 0
+    println!("comparing vectors: \n{:?} \nand \n{:?}", vss_scheme_vec[0], new_vss);
     vss_scheme_vec.remove(0);
-    println!("vss scheme size1: {}", vss_scheme_vec.len());
-    vss_scheme_vec.insert(0,new_vss);
-    println!("vss scheme size2: {}", vss_scheme_vec.len());
+    vss_scheme_vec.insert(0, new_vss);
     let private = PartyPrivate::set_private(party_keys.clone(), shared_keys);
     if party_num_int == 1 {
+        // update u_i and x_i for leader
         private.update_private_key(&f_l_new, &f_l_new);
     } else {
+        // only update x_i for non-leaders
         private.update_private_key(&FE::zero(), &f_l_new);
     }
     println!("New public key: {:?}", &y_sum);
