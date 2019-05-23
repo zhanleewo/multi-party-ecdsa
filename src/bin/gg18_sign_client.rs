@@ -65,7 +65,6 @@ pub struct Params {
     pub parties: String,
     pub threshold: String,
 }
-
 pub fn hd_key(
     mut location_in_hir: Vec<BigInt>,
     pubkey: &GE,
@@ -85,7 +84,8 @@ pub fn hd_key(
 
     let bn_to_slice = BigInt::to_vec(chain_code_bi);
     let chain_code = GE::from_bytes(&bn_to_slice[1..33]).unwrap() * &f_r_fe;
-    let pub_key = pubkey * &f_l_fe;
+    let g: GE = ECPoint::generator();
+    let pub_key = *pubkey + g * &f_l_fe;
 
     let (public_key_new_child, f_l_new, cc_new) =
         location_in_hir
@@ -100,8 +100,8 @@ pub fn hd_key(
                 let f_r = &f & &mask;
                 let f_l_fe: FE = ECScalar::from(&f_l);
                 let f_r_fe: FE = ECScalar::from(&f_r);
-
-                (acc.0 * &f_l_fe, f_l_fe * &acc.1, &acc.2 * &f_r_fe)
+                
+                (acc.0 + g * &f_l_fe, f_l_fe + &acc.1, &acc.2 * &f_r_fe)
             });
     (public_key_new_child, f_l_new, cc_new)
 }
@@ -125,7 +125,7 @@ fn main() {
     // read key file
     let data = fs::read_to_string(env::args().nth(2).unwrap())
         .expect("Unable to load keys, did you run keygen first? ");
-    let (party_keys, shared_keys, party_id, vss_scheme_vec, paillier_key_vector, y_sum): (
+    let (party_keys, shared_keys, party_id, mut vss_scheme_vec, paillier_key_vector, y_sum): (
         Keys,
         SharedKeys,
         u32,
@@ -183,27 +183,46 @@ fn main() {
 
     // generate a random but shared chain code
     let chain_code = shared_keys.y + GE::generator();
-    println!("chain code {} {}", shared_keys.y.bytes_compressed_to_big_int(),
-             chain_code.bytes_compressed_to_big_int());
+    println!("chain code {:?}", chain_code);
 
     // derive a new pubkey and LR sequence, y_sum becomes a new child pub key
+    // let (y_sum, f_l_new, _cc_new) =
+        // hd_key(vec![BigInt::from(0), BigInt::from(1)], &y_sum, &chain_code.bytes_compressed_to_big_int());
     let (y_sum, f_l_new, _cc_new) =
         hd_key(vec![BigInt::from(0), BigInt::from(1)], &y_sum, &chain_code.bytes_compressed_to_big_int());
-    let private;
-    // set party=1 as leader
-    let leader = 1 as usize;
-    let mut new_party_keys = party_keys.clone();
-    if party_num_int as usize == leader {
-        // update leader's private key 
-        new_party_keys.u_i = party_keys.u_i * &f_l_new;
-        private = PartyPrivate::set_private(new_party_keys.clone(), shared_keys);
+
+    // optimize!
+    let g: GE = ECPoint::generator();
+    let com_zero_new = vss_scheme_vec[0].commitments[0] + g * f_l_new;
+    let mut com_iter_unchanged = vss_scheme_vec[0].commitments.iter();
+    com_iter_unchanged.next().unwrap();
+    let com_vec_new = (0..vss_scheme_vec[1].commitments.len())
+        .map(|i| {
+            if i == 0 {
+                com_zero_new
+            } else {
+                com_iter_unchanged.next().unwrap().clone()
+            }
+        })
+        .collect::<Vec<GE>>();
+    let new_vss = VerifiableSS {
+        parameters: vss_scheme_vec[0].parameters.clone(),
+        commitments: com_vec_new,
+    };        
+
+    vss_scheme_vec.remove(0);
+    println!("vss scheme size1: {}", vss_scheme_vec.len());
+    vss_scheme_vec.insert(0,new_vss);
+    println!("vss scheme size2: {}", vss_scheme_vec.len());
+    let private = PartyPrivate::set_private(party_keys.clone(), shared_keys);
+    if party_num_int == 1 {
+        private.update_private_key(&f_l_new, &f_l_new);
     } else {
-        private = PartyPrivate::set_private(party_keys.clone(), shared_keys);
+        private.update_private_key(&FE::zero(), &f_l_new);
     }
     println!("New public key: {:?}", &y_sum);
  
-    //let private = PartyPrivate::set_private(party_keys.clone(), shared_keys);
-let sign_keys = SignKeys::create(
+    let sign_keys = SignKeys::create(
         &private,
         &vss_scheme_vec[signers_vec[(party_num_int - 1) as usize]],
         signers_vec[(party_num_int - 1) as usize],
