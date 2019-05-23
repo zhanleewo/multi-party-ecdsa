@@ -635,6 +635,8 @@ impl LocalSignature {
             .fold(biased_sum_tb, |acc, x| acc.sub_point(&x.get_element()));
         match test_com {
             true => {
+                println!("g: {:?}, bias: {:?}", g.bytes_compressed_to_big_int(),
+                         biased_sum_tb_minus_u.bytes_compressed_to_big_int());
                 if g == biased_sum_tb_minus_u {
                     Ok(self.s_i.clone())
                 } else {
