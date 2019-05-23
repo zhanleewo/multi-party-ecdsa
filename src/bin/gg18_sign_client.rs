@@ -181,10 +181,12 @@ fn main() {
     }
     // signers_vec.sort();
 
-    let chain_code = GE::generator(); 
+    // generate a random but shared chain code
+    let chain_code = shared_keys.y + GE::generator();
     println!("chain code {} {}", shared_keys.y.bytes_compressed_to_big_int(),
              chain_code.bytes_compressed_to_big_int());
 
+    // derive a new pubkey and LR sequence, y_sum becomes a new child pub key
     let (y_sum, f_l_new, _cc_new) =
         hd_key(vec![BigInt::from(0), BigInt::from(1)], &y_sum, &chain_code.bytes_compressed_to_big_int());
     let private;
@@ -192,12 +194,13 @@ fn main() {
     let leader = 1 as usize;
     let mut new_party_keys = party_keys.clone();
     if party_num_int as usize == leader {
+        // update leader's private key 
         new_party_keys.u_i = party_keys.u_i * &f_l_new;
         private = PartyPrivate::set_private(new_party_keys.clone(), shared_keys);
     } else {
         private = PartyPrivate::set_private(party_keys.clone(), shared_keys);
     }
-    println!("New public key: {}", y_sum.get_element());
+    println!("New public key: {:?}", &y_sum);
  
     //let private = PartyPrivate::set_private(party_keys.clone(), shared_keys);
 let sign_keys = SignKeys::create(
