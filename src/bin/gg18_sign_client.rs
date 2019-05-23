@@ -125,7 +125,7 @@ fn main() {
     // read key file
     let data = fs::read_to_string(env::args().nth(2).unwrap())
         .expect("Unable to load keys, did you run keygen first? ");
-    let (party_keys, shared_keys, party_id, vss_scheme_vec, paillier_key_vector, y_sum_main): (
+    let (party_keys, shared_keys, party_id, vss_scheme_vec, paillier_key_vector, y_sum): (
         Keys,
         SharedKeys,
         u32,
@@ -181,26 +181,26 @@ fn main() {
     }
     // signers_vec.sort();
 
-    // let chain_code = shared_keys.y; //* &party_keys.u_i;
-    // println!("chain code {} {}", shared_keys.y.bytes_compressed_to_big_int(),
-    //          chain_code.bytes_compressed_to_big_int());
+    let chain_code = GE::generator(); 
+    println!("chain code {} {}", shared_keys.y.bytes_compressed_to_big_int(),
+             chain_code.bytes_compressed_to_big_int());
 
-    // let (y_sum, f_l_new, cc_new) =
-    //     hd_key(vec![BigInt::from(0), BigInt::from(1)], &y_sum_main, &chain_code.bytes_compressed_to_big_int());
-    // let private;
-    // // set party=2 as leader
-    // if (party_num_int == 1 ) {
-    //     let mut new_party_keys = party_keys.clone();
-    //     new_party_keys.u_i = party_keys.u_i * &f_l_new;
-    //     private = PartyPrivate::set_private(new_party_keys.clone(), shared_keys);
-    // } else{
-    //     private = PartyPrivate::set_private(party_keys.clone(), shared_keys);
-    // }
-      
-    
-    // println!("Master pubkey: {:?}, new pubkey: {}", y_sum_main.bytes_compressed_to_big_int(),
-    //          y_sum.bytes_compressed_to_big_int());
-    let sign_keys = SignKeys::create(
+    let (y_sum, f_l_new, _cc_new) =
+        hd_key(vec![BigInt::from(0), BigInt::from(1)], &y_sum, &chain_code.bytes_compressed_to_big_int());
+    let private;
+    // set party=1 as leader
+    let leader = 1 as usize;
+    let mut new_party_keys = party_keys.clone();
+    if party_num_int as usize == leader {
+        new_party_keys.u_i = party_keys.u_i * &f_l_new;
+        private = PartyPrivate::set_private(new_party_keys.clone(), shared_keys);
+    } else {
+        private = PartyPrivate::set_private(party_keys.clone(), shared_keys);
+    }
+    println!("New public key: {}", y_sum.get_element());
+ 
+    //let private = PartyPrivate::set_private(party_keys.clone(), shared_keys);
+let sign_keys = SignKeys::create(
         &private,
         &vss_scheme_vec[signers_vec[(party_num_int - 1) as usize]],
         signers_vec[(party_num_int - 1) as usize],
@@ -336,7 +336,9 @@ fn main() {
                 signers_vec[(i - 1) as usize],
                 &signers_vec,
             );
+            println!("Verifying client {}", party_num_int);
             assert_eq!(m_b.b_proof.pk.clone(), g_w_i);
+            println!("Verified client {}", party_num_int);
             j = j + 1;
         }
     }
@@ -584,7 +586,7 @@ fn main() {
     println!("s: {:?} \n", sig.s);
     println!("child pubkey: {:?} \n", y_sum);
 
-    println!("pubkey: {:?} \n", y_sum_main);
+    println!("pubkey: {:?} \n", y_sum);
     let sign_json = serde_json::to_string(&(
         "r",
         (BigInt::from(&(sig.r.get_element())[..])).to_str_radix(16),
@@ -716,7 +718,7 @@ pub fn poll_for_broadcasts(
                 let answer: Result<Entry, ()> = serde_json::from_str(&res_body).unwrap();
                 if answer.is_ok() {
                     ans_vec.push(answer.unwrap().value);
-                    println!("party {:?} {:?} read success", i, round);
+                    // println!("party {:?} {:?} read success", i, round);
                     break;
                 }
             }
@@ -750,7 +752,7 @@ pub fn poll_for_p2p(
                 let answer: Result<Entry, ()> = serde_json::from_str(&res_body).unwrap();
                 if answer.is_ok() {
                     ans_vec.push(answer.unwrap().value);
-                    println!("party {:?} {:?} read success", i, round);
+                    // println!("party {:?} {:?} read success", i, round);
                     break;
                 }
             }
