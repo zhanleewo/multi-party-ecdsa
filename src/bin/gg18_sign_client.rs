@@ -196,7 +196,7 @@ fn main() {
     // get iterator of all commitments and skip first zero commitment 
     let mut com_iter_unchanged = vss_scheme_vec[0].commitments.iter();
     com_iter_unchanged.next().unwrap();
-    // iterate commitments and inject changed commitments in the beginning
+    // iterate commitments and inject changed commitments in the beginning then aggregate into vector
     let com_vec_new = (0..vss_scheme_vec[1].commitments.len())
         .map(|i| {
             if i == 0 {
