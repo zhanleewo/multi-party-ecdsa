@@ -100,7 +100,7 @@ pub fn hd_key(
                 let f_r = &f & &mask;
                 let f_l_fe: FE = ECScalar::from(&f_l);
                 let f_r_fe: FE = ECScalar::from(&f_r);
-                
+
                 (acc.0 + g * &f_l_fe, f_l_fe + &acc.1, &acc.2 * &f_r_fe)
             });
     (public_key_new_child, f_l_new, cc_new)
@@ -182,17 +182,18 @@ fn main() {
     // signers_vec.sort();
 
     // generate a random but shared chain code
-    let chain_code = shared_keys.y + GE::generator();
-    println!("chain code {:?}", chain_code);
+    let chain_code = GE::generator();
+    // println!("chain code {:?}", chain_code);
 
     // derive a new pubkey and LR sequence, y_sum becomes a new child pub key
-    let (y_sum, f_l_new, _cc_new) =
+    let (y_sum_child, f_l_new, _cc_new) =
         hd_key(vec![BigInt::from(0), BigInt::from(1)], &y_sum, &chain_code.bytes_compressed_to_big_int());
 
     // optimize!
     let g: GE = ECPoint::generator();
     // apply on first commitment for leader (leader is party with num=1)
     let com_zero_new = vss_scheme_vec[0].commitments[0] + g * f_l_new;
+    // println!("old zero: {:?}, new zero: {:?}", vss_scheme_vec[0].commitments[0], com_zero_new);
     // get iterator of all commitments and skip first zero commitment 
     let mut com_iter_unchanged = vss_scheme_vec[0].commitments.iter();
     com_iter_unchanged.next().unwrap();
@@ -207,23 +208,26 @@ fn main() {
         })
         .collect::<Vec<GE>>();
     let new_vss = VerifiableSS {
-        parameters: vss_scheme_vec[0].parameters.clone(),
+        parameters: vss_scheme_vec[1].parameters.clone(),
         commitments: com_vec_new,
-    };        
+    };
     // replace old vss_scheme for leader with new one at position 0
-    println!("comparing vectors: \n{:?} \nand \n{:?}", vss_scheme_vec[0], new_vss);
-    vss_scheme_vec.remove(0);
-    vss_scheme_vec.insert(0, new_vss);
+    // println!("comparing vectors: \n{:?} \nand \n{:?}", vss_scheme_vec[0], new_vss);
+
+    // let y_sum = y_sum_child.clone();
+    // vss_scheme_vec.remove(0);
+    // vss_scheme_vec.insert(0, new_vss);
+    println!("NEW VSS VECTOR: {:?}", vss_scheme_vec);
     let private = PartyPrivate::set_private(party_keys.clone(), shared_keys);
-    if party_num_int == 1 {
-        // update u_i and x_i for leader
-        private.update_private_key(&f_l_new, &f_l_new);
-    } else {
-        // only update x_i for non-leaders
-        private.update_private_key(&FE::zero(), &f_l_new);
-    }
-    println!("New public key: {:?}", &y_sum);
- 
+    // if party_num_int == 1 {
+    //     // update u_i and x_i for leader
+    //     private.update_private_key(&f_l_new, &f_l_new);
+    // } else {
+    //     // only update x_i for non-leaders
+    //     private.update_private_key(&FE::zero(), &f_l_new);
+    // }
+    // println!("New public key: {:?}", &y_sum);
+
     let sign_keys = SignKeys::create(
         &private,
         &vss_scheme_vec[signers_vec[(party_num_int - 1) as usize]],
@@ -342,7 +346,10 @@ fn main() {
 
     let mut j = 0;
     for i in 1..THRESHOLD + 2 {
+        println!("mbproof p={}, i={}, j={}", party_num_int, i, j);
         if i != party_num_int {
+            println!("verifying: p={}, i={}, j={}", party_num_int,
+                     i, j);
             let m_b = m_b_gamma_rec_vec[j].clone();
 
             let alpha_ij_gamma = m_b
@@ -360,9 +367,9 @@ fn main() {
                 signers_vec[(i - 1) as usize],
                 &signers_vec,
             );
-            println!("Verifying client {}", party_num_int);
+            //println!("Verifying client {}", party_num_int);
             assert_eq!(m_b.b_proof.pk.clone(), g_w_i);
-            println!("Verified client {}", party_num_int);
+            //println!("Verified client {}", party_num_int);
             j = j + 1;
         }
     }
