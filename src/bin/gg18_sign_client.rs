@@ -181,9 +181,9 @@ fn main() {
     }
     // signers_vec.sort();
 
-    // generate a random but shared chain code
+    // generate a random but shared chain code, this will do
     let chain_code = GE::generator();
-    // println!("chain code {:?}", chain_code);
+    println!("chain code {:?}", chain_code);
 
     // derive a new pubkey and LR sequence, y_sum becomes a new child pub key
     let (y_sum_child, f_l_new, _cc_new) =
@@ -208,25 +208,25 @@ fn main() {
         })
         .collect::<Vec<GE>>();
     let new_vss = VerifiableSS {
-        parameters: vss_scheme_vec[1].parameters.clone(),
+        parameters: vss_scheme_vec[0].parameters.clone(),
         commitments: com_vec_new,
     };
     // replace old vss_scheme for leader with new one at position 0
     // println!("comparing vectors: \n{:?} \nand \n{:?}", vss_scheme_vec[0], new_vss);
 
-    // let y_sum = y_sum_child.clone();
-    // vss_scheme_vec.remove(0);
-    // vss_scheme_vec.insert(0, new_vss);
+    let y_sum = y_sum_child.clone();
+    vss_scheme_vec.remove(0);
+    vss_scheme_vec.insert(0, new_vss);
     println!("NEW VSS VECTOR: {:?}", vss_scheme_vec);
-    let private = PartyPrivate::set_private(party_keys.clone(), shared_keys);
-    // if party_num_int == 1 {
-    //     // update u_i and x_i for leader
-    //     private.update_private_key(&f_l_new, &f_l_new);
-    // } else {
-    //     // only update x_i for non-leaders
-    //     private.update_private_key(&FE::zero(), &f_l_new);
-    // }
-    // println!("New public key: {:?}", &y_sum);
+    let mut private = PartyPrivate::set_private(party_keys.clone(), shared_keys);
+    if party_num_int == 1 {
+        // update u_i and x_i for leader
+        private = private.update_private_key(&f_l_new, &f_l_new);
+    } else {
+        // only update x_i for non-leaders
+        private = private.update_private_key(&FE::zero(), &f_l_new);
+    }
+    println!("New public key: {:?}", &y_sum);
 
     let sign_keys = SignKeys::create(
         &private,
@@ -235,7 +235,6 @@ fn main() {
         &signers_vec,
     );
 
-    let xi_com_vec = Keys::get_commitments_to_xi(&vss_scheme_vec);
     //////////////////////////////////////////////////////////////////////////////
     let (com, decommit) = sign_keys.phase1_broadcast();
     let m_a_k = MessageA::a(&sign_keys.k_i, &party_keys.ek);
@@ -344,6 +343,7 @@ fn main() {
     let mut alpha_vec: Vec<FE> = Vec::new();
     let mut miu_vec: Vec<FE> = Vec::new();
 
+    let xi_com_vec = Keys::get_commitments_to_xi(&vss_scheme_vec);
     let mut j = 0;
     for i in 1..THRESHOLD + 2 {
         println!("mbproof p={}, i={}, j={}", party_num_int, i, j);
